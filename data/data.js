@@ -3,35 +3,56 @@ export const states = [
     name: "USA",
     capital: "Washington",
     coordinates: [
-      [38.89, -77.05],
+      [38.8912, -77.0502],
     ],
   },
   {
     name: "Roman Empire",
     capital: "Rome",
     coordinates: [
-      [41.91, 12.52],
+      [41.9142, 12.5286],
     ],
   },
   {
     name: "United Kingdom",
     capital: "London",
     coordinates: [
-      [51.51728036979283, -0.15715752046068013],
+      [51.5172, -0.1571],
     ],
   },
   {
     name: "France",
     capital: "Paris",
     coordinates: [
-      [48.8877122902359, 2.300825868745581],
+      [48.8877, 2.3008],
     ],
   },
   {
     name: "Japan",
     capital: "Tokyo",
     coordinates: [
-      [35.73978916315886, 139.7851202355093],
+      [35.7397, 139.7851],
     ],
   },
+  {
+    name: "India",
+    capital: "New Delhi",
+    coordinates: [
+      [28.6415, 77.2214],
+    ],
+  },
+  {
+    name: "Egypt",
+    capital: "Cairo",
+    coordinates: [
+      [29.9810, 31.2057],
+    ],
+  },
+  {
+    name: "China",
+    capital: "Bejing",
+    coordinates: [
+      [39.9771, 116.5441],
+    ],
+  }
 ]

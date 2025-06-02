@@ -100,7 +100,7 @@ setInterval(() => {
       const basePos = sphericalToCartesian(player.getBasePosition(), radius);
       const distance = missile.position.distanceTo(basePos);
 
-      if (distance < 0.5 && missile.session !== playerSession) { // Adjust collision threshold as needed
+      if (distance < 0.1 && missile.session !== playerSession) { // Adjust collision threshold as needed
         missile.exploded = true;
         io.emit('missile:hitBase', {
           missileSession: missile.session,
@@ -157,14 +157,9 @@ io.on('connection', (socket) => {
   socket.on('whoami', (sessionId) => {
     console.log('Session ID:', sessionId);
 
-    // Validate session ID here
-    // If valid, send back user info
-    // Example:
     const result = players.get(sessionId)?.player
     if (result) {
       socket.emit('whoami:success', { name: result.name });
-    } else {
-      socket.emit('whoami:failure');
     }
   });
 
@@ -230,13 +225,13 @@ io.on('connection', (socket) => {
   
 
   // Event listener for when a socket disconnects
-  socket.on('disconnect', () => {
-    // Remove the player from the active players map
-    // players.delete(sessionId);
-    console.log(`Player with session ${sessionId} disconnected`);
-    // Optionally, you might want to emit an event to all clients that a player disconnected
-    io.emit('player:disconnected', { session: sessionId });
-  });
+  // socket.on('disconnect', () => {
+  //   // Remove the player from the active players map
+  //   // players.delete(sessionId);
+  //   console.log(`Player with session ${sessionId} disconnected`);
+  //   // Optionally, you might want to emit an event to all clients that a player disconnected
+  //   io.emit('player:disconnected', { session: sessionId });
+  // });
 });
 
 // Periodically broadcast all player bases for synchronization
@@ -248,7 +243,7 @@ setInterval(() => {
   }));
   // Emit the list of all bases to all connected clients
   io.emit('player:allBases', allBases);
-}, 1000); // Broadcast every second
+}, 10000);
 
 
 // Define the port the server will listen on
