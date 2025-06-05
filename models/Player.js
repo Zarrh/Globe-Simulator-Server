@@ -4,7 +4,8 @@ class Player {
   constructor(name, sessionId) {
     this.name = name;
     this.sessionId = sessionId;
-    this.basePosition = states.find((state) => state.name === this.name)?.coordinates[0] ?? Player.randomBase();
+    this.basePosition = Object.values(states.find((state) => state.name === this.name)?.coordinates)[0] ?? Player.randomBase();
+    this.basesPositions = states.find((state) => state.name === this.name)?.coordinates ?? Array(4).fill(Player.randomBase());
   }
 
   static randomBase() {
@@ -17,6 +18,14 @@ class Player {
 
   getBasePosition() {
     return this.basePosition;
+  }
+
+  getBasesPositions() {
+    return this.basesPositions;
+  }
+
+  deleteBase(base) {
+    delete this.basesPositions[base];
   }
 }
 

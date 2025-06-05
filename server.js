@@ -37,6 +37,7 @@ app.use(cookieParser());
 const takenStates = new Set();
 const players = new Map();
 const missiles = [];
+let gameStarted = false;
 
 // Middleware to assign a session ID if one doesn't exist
 app.use((req, res, next) => {
@@ -77,7 +78,39 @@ function sphericalToCartesian(startLatLon, radius) {
   return new THREE.Vector3(x, y, z);
 }
 
+function computeVelocityVector(launchPoint, velocityMagnitude, azimuthDeg, elevationDeg, startLon) {
+  const up = launchPoint.clone().normalize();
+
+  // console.log(startLon)
+
+  // Global Z-axis
+  const globalZ = new THREE.Vector3(0, 0, 1);
+
+  // North vector: project global Z onto the tangent plane at launchPoint
+  const north = globalZ.clone().sub(up.clone().multiplyScalar(globalZ.dot(up))).normalize();
+
+  // East vector: perpendicular to both up and north
+  const east = new THREE.Vector3().crossVectors(north, up).normalize();
+
+  // Convert angles to radians
+  const azimuth = THREE.MathUtils.degToRad(azimuthDeg+94-startLon); // 94...
+  const elevation = THREE.MathUtils.degToRad(elevationDeg);
+
+  const vHorizontal = velocityMagnitude * Math.cos(elevation);
+  const vVertical = velocityMagnitude * Math.sin(elevation);
+
+  const velocity = new THREE.Vector3();
+  velocity.add(north.clone().multiplyScalar(vHorizontal * Math.cos(azimuth)));
+  velocity.add(east.clone().multiplyScalar(vHorizontal * Math.sin(azimuth)));
+  velocity.add(up.clone().multiplyScalar(vVertical));
+
+  return velocity;
+}
+
+/////////////////////////////
+/////////////////////////////
 setInterval(() => {
+  if (!gameStarted) return;
   missiles.forEach((missile, index) => {
     if (missile.exploded) return;
 
@@ -91,39 +124,61 @@ setInterval(() => {
     missile.position.add(missile.velocity.clone().multiplyScalar(1 / missileUpdatesPerSecond));
 
     // Check for collision with ground
-    if (missile.position.lengthSq() < (0.95 * radius) ** 2) {
+    if (missile.position.lengthSq() < (0.98 * radius) ** 2) {
       missile.exploded = true;
     }
 
     // Check for collision with bases
     for (const [playerSession, { player, socket }] of players.entries()) {
-      const basePos = sphericalToCartesian(player.getBasePosition(), radius);
-      const distance = missile.position.distanceTo(basePos);
+      const hitBases = [];
+      for (const [city, coords] of Object.entries(player.getBasesPositions())) {
+        const basePos = sphericalToCartesian(coords, radius);
+        const distance = missile.position.distanceTo(basePos);
 
-      if (distance < 0.1 && missile.session !== playerSession) { // Adjust collision threshold as needed
-        missile.exploded = true;
-        io.emit('missile:hitBase', {
-          missileSession: missile.session,
-          baseSession: playerSession,
-          position: player.getBasePosition(),
-        });
+        if (distance < 0.05*radius && missile.exploded && missile.session !== playerSession) {
+          // missile.exploded = true;
+          io.emit('missile:hitBase', {
+            missileSession: missile.session,
+            baseSession: playerSession,
+            city: city,
+            position: coords,
+          });
 
-        players.delete(playerSession);
+          hitBases.push(city);
 
+          console.log(`Base ${city} hit`);
+        }
+      }
+
+      hitBases.forEach(city => player.deleteBase(city));
+
+      if (hitBases.length) {
+        const allBases = [...players.values()].flatMap(({ player }) =>
+          Object.entries(player.getBasesPositions()).map(([cityName, coordinates]) => ({
+            session: player.session,
+            name: player.name,
+            city: cityName,
+            startLatLon: coordinates,
+          }))
+        );
+        // Emit the list of all bases to all connected clients
+        io.emit('player:allBases', allBases);
+      }
+
+      if (Object.keys(player.getBasesPositions()).length === 0) {
+        players.delete(playerSession)
         // Send gameover to the player whose base was hit
         socket.emit('game:gameover', {
-          message: 'Your base was hit by a missile!',
+          message: 'All your bases were hit by a missile!',
         });
+      }
 
-        if (players.size === 1) {
-          const [winner] = players.values();
-          if (winner && winner.socket) {
-            winner.socket.emit('game:win', { message: 'Congratulations! You won the game!' });
-            console.log(`Player ${winner.player.name} won the game!`);
-          }
+      if (players.size === 1) {
+        const [winner] = players.values();
+        if (winner && winner.socket) {
+          winner.socket.emit('game:win', { message: 'Congratulations! You won the game!' });
+          console.log(`Player ${winner.player.name} won the game!`);
         }
-
-        break;
       }
     }
   });
@@ -135,7 +190,8 @@ setInterval(() => {
     }
   }
 }, missileUpdateInterval);
-
+/////////////////////////////
+/////////////////////////////
 
 
 // Handle Socket.IO connections
@@ -174,11 +230,15 @@ io.on('connection', (socket) => {
       players.set(sessionId, { player, socket }); // Store player instance and their socket
       console.log(`${data.name} joined with base ${player.basePosition} (session: ${sessionId})`);
 
+      if (players.size > 1) {
+        gameStarted = true;
+      }
+
       // Emit to ALL clients that a new player has joined, including their base position
       io.emit('player:joined', {
         session: sessionId,
         name: data.name,
-        basePosition: player.getBasePosition(),
+        basesPositions: player.getBasesPositions(),
       });
     } else {
       // If player exists, update their socket reference (e.g., after a reconnect)
@@ -193,16 +253,27 @@ io.on('connection', (socket) => {
     // Emit the player's base position back to the joining player only
     socket.emit('player:basePosition', {
       session: sessionId,
-      basePosition: player.getBasePosition(),
+      basesPositions: player.getBasesPositions(),
     });
+
+    const allBases = [...players.values()].flatMap(({ player }) =>
+      Object.entries(player.getBasesPositions()).map(([cityName, coordinates]) => ({
+        session: player.session,
+        name: player.name,
+        city: cityName,
+        startLatLon: coordinates,
+      }))
+    );
+    // Emit the list of all bases to all connected clients
+    io.emit('player:allBases', allBases);
   });
 
   // Event listener for when a missile is launched
   socket.on('missile:launch', (data) => {
     if (!players.has(sessionId)) return;
     const startLatLon = data.startLatLon;
-    const initialVelocity = new THREE.Vector3(...data.initialVelocity);
     const position = sphericalToCartesian(startLatLon, radius);
+    const initialVelocity = computeVelocityVector(position, data.initialVelocity[0], data.initialVelocity[1], data.initialVelocity[2], startLatLon[1]);
 
     const missileData = {
       session: sessionId,
@@ -216,6 +287,7 @@ io.on('connection', (socket) => {
     io.emit('missile:launched', {
       session: sessionId,
       missileData: data,
+      name: players.get(sessionId).player.name,
     });
 
     console.log(`Missile launched by ${sessionId}`);
@@ -236,11 +308,14 @@ io.on('connection', (socket) => {
 
 // Periodically broadcast all player bases for synchronization
 setInterval(() => {
-  const allBases = [...players.values()].map(({ player }) => ({
-    session: player.session,
-    name: player.name, // Include player name for better client-side display
-    startLatLon: player.getBasePosition(),
-  }));
+  const allBases = [...players.values()].flatMap(({ player }) =>
+    Object.entries(player.getBasesPositions()).map(([cityName, coordinates]) => ({
+      session: player.session,
+      name: player.name,
+      city: cityName,
+      startLatLon: coordinates,
+    }))
+  );
   // Emit the list of all bases to all connected clients
   io.emit('player:allBases', allBases);
 }, 10000);
@@ -248,6 +323,6 @@ setInterval(() => {
 
 // Define the port the server will listen on
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
